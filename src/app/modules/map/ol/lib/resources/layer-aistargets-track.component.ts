@@ -173,8 +173,27 @@ export class AISTargetsTrackLayerComponent extends AISBaseLayerComponent {
   // A track is a MultiLineString's coordinates (Array<Position[]>), so each
   // element is a line — not a MultiLineString — and is unwrapped as a whole.
   parseCoordinates(trk: Array<Array<Coordinate>>) {
+    // Defend against a malformed track. A corrupt AIS target track (e.g. one
+    // whose positions carry non-numeric junk such as a leaked "LAT"/"LON" header
+    // row) would otherwise throw inside the coordinate transform on every render
+    // — an uncaught error fired once per delta that spams the console and can
+    // stall the update loop. Keep only well-formed [lon, lat] positions so one
+    // bad target can no longer break the map; a track left with nothing valid
+    // yields an empty geometry and simply isn't drawn.
+    const clean = (Array.isArray(trk) ? trk : [])
+      .filter((line): line is Array<Coordinate> => Array.isArray(line))
+      .map((line) =>
+        line.filter(
+          (pos) =>
+            Array.isArray(pos) &&
+            pos.length >= 2 &&
+            Number.isFinite(pos[0]) &&
+            Number.isFinite(pos[1])
+        )
+      )
+      .filter((line) => line.length > 0);
     // ** handle dateline crossing **
-    const lines = trk.map((line) => mapifyCoords(line));
+    const lines = clean.map((line) => mapifyCoords(line));
     return fromLonLatArray(lines);
   }
 }
